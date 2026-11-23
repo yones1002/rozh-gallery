@@ -1,0 +1,70 @@
+name: rozh-gallery
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        UID: ${UID:-1000}
+        GID: ${GID:-1000}
+    image: rozh-gallery-app
+    restart: unless-stopped
+    stop_grace_period: 20s
+    working_dir: /var/www/html
+    volumes:
+      - .:/var/www/html
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      DB_HOST: db
+      DB_PORT: "3306"
+      APP_URL: http://localhost:8000
+    depends_on:
+      db:
+        condition: service_healthy
+    # Laravel drops non-passthrough env vars when .env exists unless --no-reload is set.
+    command: ["php", "artisan", "serve", "--host=0.0.0.0", "--port=8000", "--no-reload"]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/up"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  db:
+    image: mysql:8.4
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3308:3306"
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE:-rozh_gallery}
+      MYSQL_USER: ${DB_USERNAME:-rozh}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env before starting Compose}
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env before starting Compose}
+    volumes:
+      - rozh-gallery-mysql-data:/var/lib/mysql
+      - ./docker/mysql/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 40s
+
+  node:
+    image: node:22-bookworm
+    profiles: ["assets"]
+    working_dir: /var/www/html
+    user: "${UID:-1000}:${GID:-1000}"
+    environment:
+      HOME: /tmp
+    volumes:
+      - .:/var/www/html
+    ports:
+      - "127.0.0.1:5174:5174"
+    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "5174"]
+
+volumes:
+  rozh-gallery-mysql-data:
+    name: rozh-gallery-mysql-data
